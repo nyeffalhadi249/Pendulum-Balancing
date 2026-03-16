@@ -1,4 +1,6 @@
+clear; clc;
 % - Pendulum Parameters
+load("C:\Users\nyeff\OneDrive\Desktop\Pendulum_Cart\EstimatedParameters_SinglePendulum.mat")
 mp = EstimatedParameters(2); % mass
 xp = EstimatedParameters(1); % distance of cg from cart
 Ip = EstimatedParameters(3); % moment of intertia about cg
@@ -6,32 +8,61 @@ kt = EstimatedParameters(4); % rotational damping
 g = EstimatedParameters(5); % gravitational acceleration
 
 % - Sampling Parameters
-fs = 60; % angle sampling frequency (Hz)
-measurement_variance = 1e-4; % noise
+fs = 60; % sampling frequency (Hz)
 
 % - Initial Conditions
 theta_0 = 10 * pi / 180;
 theta_d_0 = 0;
+x_0 = 0;
+x_d_0 = 0;
 
-% - LQR
+% - H_inf
+Ibar = Ip + mp*xp^2;
 
 A = 1 / (Ip + mp*xp^2) * [   0,    Ip + mp*xp^2;
                           mp*g*xp,    -kt       ];
 
+A_aug = [0,              1,          0, 0;
+         mp*g*xp / Ibar, -kt / Ibar, 0, 0;
+         0,              0,          0, 1;
+         0,              0,          0, 0];
+
 B = 1 / (Ip + mp*xp^2) * [0; mp*xp];
 
-Q = [100, 0;
-    0, 1];
-R = 1; 
-N = zeros(2, 1);
+B_u = [0; mp*xp / Ibar; 0; 1];
+Bw = 0.0*eye(4);
+B_hinf = [Bw, B_u];
 
-K = lqr(A, B, Q, R, N);
+C = [1, 0, 0, 0; 
+     0, 0, 1, 0];
 
-% - Kalman Filter
-W = [7.5e-3,  0,    0;
-      0,   7.5e-3,  0;
-      0,      0,     1e-4];
+Wz = diag([100 5 5 1]);
+Cz = [Wz;
+      zeros(1,4)];
 
-V = measurement_variance;
+Cy = [1 0 0 0;
+      0 0 1 0];
 
-P0 = zeros(3, 3);
+C_hinf = [Cz;
+          Cy];
+
+R = 0.01;
+D11 = zeros(5,4);
+D12 = [zeros(4,1);
+       sqrt(R)];
+
+Noise = [0.0001, 0.01];
+D21 = diag(Noise)*eye(2,4);
+D22 = zeros(2, 1);
+
+D_hinf = [D11 D12;
+          D21 D22];
+
+
+ncon = 1;
+nmeas = 2;
+Pc = ss(A_aug, B_hinf, C_hinf, D_hinf);
+P = c2d(Pc,1/fs);
+[K, CL, gamma] = hinfsyn(P, nmeas, ncon);
+[AK, BK, CK, DK] = ssdata(K);
+
